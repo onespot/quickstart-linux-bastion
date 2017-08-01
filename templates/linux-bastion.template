@@ -48,6 +48,12 @@
                 }
             ],
             "ParameterLabels": {
+                "AuthorizedIamGroups" : {
+                    "default": "Names of IAM groups that will be granted ssh access."
+                },
+                "AuthorizedSudoerGroups" : {
+                    "default": "Names of IAM groups that will be granted sudo access."
+                },
                 "BastionAMIOS": {
                     "default": "Bastion AMI Operating System"
                 },
@@ -94,6 +100,21 @@
         }
     },
     "Parameters": {
+        "AssumeRole": {
+            "Type": "String",
+            "Description": "Optional IAM role ARN to assume to get the IAM users from another account",
+            "Default": ""
+        },
+        "AuthorizedIamGroups" : {
+            "Default": "",
+            "Description": "Comma separate IAM groups whose users will be given SSH access.",
+            "Type": "String"
+        },
+        "AuthorizedSudoerGroups" : {
+            "Default": "",
+            "Description": "Comma separated IAM groups whose users will be given sudo access.",
+            "Type": "String"
+        },
         "BastionAMIOS": {
             "AllowedValues": [
                 "Amazon-Linux-HVM",
@@ -335,6 +356,38 @@
         }
     },
     "Conditions": {
+        "UseCrossAccountIAM": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "AssumeRole"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        },
+        "UseLocalIAM": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AssumeRole"
+                },
+                ""
+            ]
+        },
+        "HasKeyName": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "KeyPairName"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        },
         "2BastionCondition": {
             "Fn::Or": [
                 {
@@ -411,6 +464,70 @@
                                 ]
                             ]
                         }
+                    }
+                ]
+            }
+        },
+        "CrossAccountRolePolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Condition": "UseCrossAccountIAM",
+            "Properties": {
+                "PolicyName": "crossaccountiam",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": "sts:AssumeRole",
+                            "Resource": {
+                                "Ref": "AssumeRole"
+                            }
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "BastionHostRole"
+                    }
+                ]
+            }
+        },
+        "LocalRolePolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Condition": "UseLocalIAM",
+            "Properties": {
+                "PolicyName": "iam",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "iam:ListUsers",
+                                "iam:GetGroup"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "iam:ListSSHPublicKeys",
+                                "iam:GetSSHPublicKey"
+                            ],
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:user/*"
+                            }
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": "ec2:DescribeTags",
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "BastionHostRole"
                     }
                 ]
             }
@@ -617,7 +734,134 @@
                 },
                 "AWS::CloudFormation::Init": {
                     "config": {
+                        "packages": {
+                            "apt": {
+                                "git": []
+                            },
+                            "yum": {
+                                "git": []
+                            }
+                        },
                         "files": {
+                            "/opt/install.sh": {
+                                "content": { "Fn::Join": [ "", [
+                                  "#!/bin/bash -e\n",
+                                  "\n",
+                                  "show_help() {\n",
+                                  "cat << EOF\n",
+                                  "Usage: ${0##*/} [-hv] [-a ARN] [-i GROUP,GROUP,...] [-l GROUP,GROUP,...] [-s GROUP]\n",
+                                  "Install import_users.sh and authorized_key_commands.\n",
+                                  "\n",
+                                  "    -h              display this help and exit\n",
+                                  "    -v              verbose mode.\n",
+                                  "\n",
+                                  "    -a arn          Assume a role before contacting AWS IAM to get users and keys.\n",
+                                  "                    This can be used if you define your users in one AWS account, while the EC2\n",
+                                  "                    instance you use this script runs in another.\n",
+                                  "    -i group,group  Which IAM groups have access to this instance\n",
+                                  "                    Comma seperated list of IAM groups. Leave empty for all available IAM users\n",
+                                  "    -l group,group  Give the users these local UNIX groups\n",
+                                  "                    Comma seperated list\n",
+                                  "    -s group,group  Specify IAM group(s) for users who should be given sudo privileges, or leave\n",
+                                  "                    empty to not change sudo access, or give it the value '##ALL##' to have all\n",
+                                  "                    users be given sudo rights.\n",
+                                  "                    Comma seperated list\n",
+                                  "\n",
+                                  "\n",
+                                  "EOF\n",
+                                  "}\n",
+                                  "\n",
+                                  "IAM_GROUPS=\"\"\n",
+                                  "SUDO_GROUPS=\"\"\n",
+                                  "LOCAL_GROUPS=\"\"\n",
+                                  "ASSUME_ROLE=\"\"\n",
+                                  "\n",
+                                  "while getopts :hva:i:l:s: opt\n",
+                                  "do\n",
+                                  "    case $opt in\n",
+                                  "        h)\n",
+                                  "            show_help\n",
+                                  "            exit 0\n",
+                                  "            ;;\n",
+                                  "        i)\n",
+                                  "            IAM_GROUPS=\"$OPTARG\"\n",
+                                  "            ;;\n",
+                                  "        s)\n",
+                                  "            SUDO_GROUPS=\"$OPTARG\"\n",
+                                  "            ;;\n",
+                                  "        l)\n",
+                                  "            LOCAL_GROUPS=\"$OPTARG\"\n",
+                                  "            ;;\n",
+                                  "        v)\n",
+                                  "            set -x\n",
+                                  "            ;;\n",
+                                  "        a)\n",
+                                  "            ASSUME_ROLE=\"$OPTARG\"\n",
+                                  "            ;;\n",
+                                  "        \\?)\n",
+                                  "            echo \"Invalid option: -$OPTARG\" >&2\n",
+                                  "            show_help\n",
+                                  "            exit 1\n",
+                                  "            ;;\n",
+                                  "        :)\n",
+                                  "            echo \"Option -$OPTARG requires an argument.\" >&2\n",
+                                  "            show_help\n",
+                                  "            exit 1\n",
+                                  "    esac\n",
+                                  "done\n",
+                                  "\n",
+                                  "tmpdir=$(mktemp -d)\n",
+                                  "\n",
+                                  "cd \"$tmpdir\"\n",
+                                  "\n",
+                                  "git clone https://github.com/onespot/aws-ec2-ssh.git\n",
+                                  "\n",
+                                  "cd \"$tmpdir/aws-ec2-ssh\"\n",
+                                  "\n",
+                                  "cp authorized_keys_command.sh /opt/authorized_keys_command.sh\n",
+                                  "cp import_users.sh /opt/import_users.sh\n",
+                                  "\n",
+                                  "if [ \"${IAM_GROUPS}\" != \"\" ]\n",
+                                  "then\n",
+                                  "    echo \"IAM_AUTHORIZED_GROUPS=\\\"${IAM_GROUPS}\\\"\" >> /etc/aws-ec2-ssh.conf\n",
+                                  "fi\n",
+                                  "\n",
+                                  "if [ \"${SUDO_GROUPS}\" != \"\" ]\n",
+                                  "then\n",
+                                  "    echo \"SUDOERS_GROUPS=\\\"${SUDO_GROUPS}\\\"\" >> /etc/aws-ec2-ssh.conf\n",
+                                  "fi\n",
+                                  "\n",
+                                  "if [ \"${LOCAL_GROUPS}\" != \"\" ]\n",
+                                  "then\n",
+                                  "    echo \"LOCAL_GROUPS=\\\"${LOCAL_GROUPS}\\\"\" >> /etc/aws-ec2-ssh.conf\n",
+                                  "fi\n",
+                                  "\n",
+                                  "if [ \"${ASSUME_ROLE}\" != \"\" ]\n",
+                                  "then\n",
+                                  "    echo \"ASSUMEROLE=\\\"${ASSUME_ROLE}\\\"\" >> /etc/aws-ec2-ssh.conf\n",
+                                  "fi\n",
+                                  "\n",
+                                  "condition=$(grep -i AuthorizedKeysCommand /etc/ssh/sshd_config | wc -l)\n",
+                                  "if [ $condition -gt 0 ]\n",
+                                  "then\n",
+                                  "    sed -i 's:#AuthorizedKeysCommand none:AuthorizedKeysCommand /opt/authorized_keys_command.sh:g' /etc/ssh/sshd_config\n",
+                                  "    sed -i 's:#AuthorizedKeysCommandUser nobody:AuthorizedKeysCommandUser nobody:g' /etc/ssh/sshd_config\n",
+                                  "else\n",
+                                  "    echo \"AuthorizedKeysCommand /opt/authorized_keys_command.sh\" >> /etc/ssh/sshd_config",
+                                  "    echo \"AuthorizedKeysCommandUser nobody\" >> /etc/ssh/sshd_config",
+                                  "fi\n",
+                                  "\n",
+                                  "echo \"*/10 * * * * root /opt/import_users.sh\" > /etc/cron.d/import_users\n",
+                                  "chmod 0644 /etc/cron.d/import_users\n",
+                                  "\n",
+                                  "/opt/import_users.sh\n",
+                                  "\n",
+                                  "service sshd restart\n"
+                                ]]},
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
                             "/tmp/bastion_bootstrap.sh": {
                                 "source": {
                                     "Fn::Sub": [
@@ -640,6 +884,12 @@
                             }
                         },
                         "commands": {
+                            "a_install": {
+                                "command": {
+                                    "Fn::Sub": "./install.sh -a \"${AssumeRole}\" -i \"${AuthorizedIamGroups}\" -s \"${AuthorizedSudoerGroups}\""
+                                },
+                                "cwd": "/opt"
+                            },
                             "b-bootstrap": {
                                 "command": {
                                     "Fn::Join": [
