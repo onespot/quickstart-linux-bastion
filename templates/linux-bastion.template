@@ -1065,12 +1065,22 @@
             "Description": "Auto Scaling Group Reference ID",
             "Value": {
                 "Ref": "BastionAutoScalingGroup"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-BastionAutoScalingGroup"
+                }
             }
         },
         "EIP1": {
             "Description": "Elastic IP 1 for Bastion",
             "Value": {
                 "Ref": "EIP1"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-EIP1"
+                }
             }
         },
         "EIP2": {
@@ -1078,6 +1088,11 @@
             "Description": "Elastic IP 2 for Bastion",
             "Value": {
                 "Ref": "EIP2"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-EIP2"
+                }
             }
         },
         "EIP3": {
@@ -1085,6 +1100,11 @@
             "Description": "Elastic IP 3 for Bastion",
             "Value": {
                 "Ref": "EIP3"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-EIP3"
+                }
             }
         },
         "EIP4": {
@@ -1092,19 +1112,34 @@
             "Description": "Elastic IP 4 for Bastion",
             "Value": {
                 "Ref": "EIP4"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-EIP4"
+                }
             }
         },
         "CloudWatchLogs": {
             "Value": {
                 "Ref": "BastionMainLogGroup"
             },
-            "Description": "CloudWatch Logs GroupName. Your SSH logs will be stored here."
+            "Description": "CloudWatch Logs GroupName. Your SSH logs will be stored here.",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-CloudWatchLogs"
+                }
+            }
         },
         "BastionSecurityGroupID": {
             "Value": {
                 "Ref": "BastionSecurityGroup"
             },
-            "Description": "Bastion Security Group ID"
+            "Description": "Bastion Security Group ID",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-BastionSecurityGroupID"
+                }
+            }
         }
     }
 }
