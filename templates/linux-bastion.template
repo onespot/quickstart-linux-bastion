@@ -736,16 +736,14 @@
                     "config": {
                         "packages": {
                             "apt": {
-                                "git": []
-                            },
-                            "yum": {
-                                "git": []
+                                "git": [],
+                                "jq": []
                             }
                         },
                         "files": {
                             "/opt/install.sh": {
                                 "source": "https://raw.githubusercontent.com/onespot/aws-ec2-ssh/onespot-master/install.sh",
-                                "mode": "000755",
+                                "mode": "000550",
                                 "owner": "root",
                                 "group": "root"
                             },
@@ -771,7 +769,7 @@
                             }
                         },
                         "commands": {
-                            "a_install": {
+                            "a-install": {
                                 "command": {
                                     "Fn::Sub": "./install.sh -a \"${AssumeRole}\" -i \"${AuthorizedIamGroups}\" -s \"${AuthorizedSudoerGroups}\""
                                 },
