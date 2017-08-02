@@ -741,7 +741,7 @@
                             }
                         },
                         "files": {
-                            "/opt/aws-ec2-user/install.sh": {
+                            "/opt/aws-ec2-ssh/install.sh": {
                                 "source": "https://raw.githubusercontent.com/onespot/aws-ec2-ssh/onespot-master/install.sh",
                                 "mode": "000550",
                                 "owner": "root",
@@ -773,7 +773,7 @@
                                 "command": {
                                     "Fn::Sub": "./install.sh -a \"${AssumeRole}\" -i \"${AuthorizedIamGroups}\" -s \"${AuthorizedSudoerGroups}\""
                                 },
-                                "cwd": "/opt/aws-ec2-user"
+                                "cwd": "/opt/aws-ec2-ssh"
                             },
                             "b-bootstrap": {
                                 "command": {
