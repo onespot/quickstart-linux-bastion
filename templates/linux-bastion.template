@@ -809,21 +809,6 @@
                                 "owner": "root",
                                 "group": "root"
                             },
-                            "/etc/consul.d/client.json" : {
-                                "content" : { "Fn::Join" : ["", [
-                                    "{\n",
-                                    "   \"server\": false,\n",
-                                    "   \"ui\": true,\n",
-                                    "   \"data_dir\": \"/var/consul\",\n",
-                                    "   \"client_addr\": \"0.0.0.0\",\n",
-                                    "   \"retry_join_ec2\": {\n",
-                                    "       \"tag_key\": \"", {"Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagKey"}}  ,"\",\n",
-                                    "       \"tag_value\": \"", {"Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagValue"}}, "\"\n",
-                                    "   }\n",
-                                    "}\n"
-                                ]]},
-                                "mode" : "000640"
-                            },
                             "/tmp/bastion_bootstrap.sh": {
                                 "source": {
                                     "Fn::Sub": [
@@ -993,10 +978,13 @@
                                 "\n",
                                 "chmod +x ${CONSUL_BOOTSTRAP_FILE}\n",
                                 "./${CONSUL_BOOTSTRAP_FILE} ",
-                                " --consul_tag_key aws:cloudformation:stack-name ",
+                                " --consul_tag_key ",
+                                {
+                                    "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagKey"}
+                                },
                                 " --consul_tag_value ",
                                 {
-                                    "Ref": "ConsulServerStack"
+                                    "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagValue"}
                                 },
                                 " --s3bucket ",
                                 {
