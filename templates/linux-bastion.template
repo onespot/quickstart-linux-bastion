@@ -115,6 +115,29 @@
             "Description": "Comma separated IAM groups whose users will be given sudo access.",
             "Type": "String"
         },
+        "ConsulVersion": {
+            "Default": "0.8.1",
+            "Description": "Version of Consul to deploy",
+            "Type": "String"
+        },
+        "ConsulServerStack": {
+            "Description": "The ARN ID for the Cloudformation stack that created the consul servers",
+            "Type": "String"
+        },
+        "ConsulQSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "quickstart-reference",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "ConsulQSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "hashicorp/consul/latest/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
         "BastionAMIOS": {
             "AllowedValues": [
                 "Amazon-Linux-HVM",
@@ -468,6 +491,38 @@
                 ]
             }
         },
+        "ConsulBucketAccessPolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "consul-bucket-access",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": ["s3:ListBucket"],
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:s3:::${ConsulQSS3BucketName}"
+                            }
+                        },
+                        {
+                            "Action": [
+                                "s3:GetObject"
+                            ],
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:s3:::${ConsulQSS3BucketName}/${ConsulQSS3KeyPrefix}*"
+                            },
+                            "Effect": "Allow"
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "BastionHostRole"
+                    }
+                ]
+            }
+        },
         "CrossAccountRolePolicy": {
             "Type": "AWS::IAM::Policy",
             "Condition": "UseCrossAccountIAM",
@@ -728,6 +783,9 @@
                         "buckets": [
                             {
                                 "Ref": "QSS3BucketName"
+                            },
+                            {
+                                "Ref": "ConsulQSS3BucketName"
                             }
                         ]
                     }
@@ -740,12 +798,31 @@
                                 "jq": []
                             }
                         },
+                        "sources": {
+                            "/etc/consul.d" : { "Fn::Join" : ["",
+                                ["https://s3.amazonaws.com/", { "Ref" : "ConsulQSS3BucketName" }, "/", { "Ref" : "ConsulQSS3KeyPrefix"}, "ClientConfig.tar.gz"]] }
+                        },
                         "files": {
                             "/opt/aws-ec2-ssh/install.sh": {
                                 "source": "https://raw.githubusercontent.com/onespot/aws-ec2-ssh/onespot-master/install.sh",
                                 "mode": "000550",
                                 "owner": "root",
                                 "group": "root"
+                            },
+                            "/etc/consul.d/client.json" : {
+                                "content" : { "Fn::Join" : ["", [
+                                    "{\n",
+                                    "   \"server\": false,\n",
+                                    "   \"ui\": true,\n",
+                                    "   \"data_dir\": \"/var/consul\",\n",
+                                    "   \"client_addr\": \"0.0.0.0\",\n",
+                                    "   \"retry_join_ec2\": {\n",
+                                    "       \"tag_key\": \"", {"Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagKey"}}  ,"\",\n",
+                                    "       \"tag_value\": \"", {"Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagValue"}}, "\"\n",
+                                    "   }\n",
+                                    "}\n"
+                                ]]},
+                                "mode" : "000640"
                             },
                             "/tmp/bastion_bootstrap.sh": {
                                 "source": {
@@ -901,6 +978,36 @@
                                 {
                                     "Ref": "AWS::Region"
                                 },
+                                "\n",
+                                "## Prepare Consul for the instance\n",
+                                "CONSUL_BOOTSTRAP_FILE=consul_client_bootstrap.sh\n",
+                                "CONSUL_BOOTSTRAP=",
+                                {
+                                    "Fn::Sub": "https://${ConsulQSS3BucketName}.s3.amazonaws.com/${ConsulQSS3KeyPrefix}scripts/"
+                                },
+                                "${CONSUL_BOOTSTRAP_FILE}",
+                                "\n",
+                                "echo ${CONSUL_BOOTSTRAP}",
+                                "\n",
+                                "wget ${CONSUL_BOOTSTRAP}",
+                                "\n",
+                                "chmod +x ${CONSUL_BOOTSTRAP_FILE}\n",
+                                "./${CONSUL_BOOTSTRAP_FILE} ",
+                                " --consul_tag_key aws:cloudformation:stack-name ",
+                                " --consul_tag_value ",
+                                {
+                                    "Ref": "ConsulServerStack"
+                                },
+                                " --s3bucket ",
+                                {
+                                    "Ref": "ConsulQSS3BucketName"
+                                },
+                                " --s3prefix ",
+                                {
+                                    "Ref": "ConsulQSS3KeyPrefix"
+                                },
+                                "\n",
+                                "## Finished preparing consul.\n",
                                 "\n",
                                 "cfn-signal -e $? --stack ",
                                 {
