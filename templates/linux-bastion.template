@@ -803,12 +803,6 @@
                 },
                 "AWS::CloudFormation::Init": {
                     "config": {
-                        "packages": {
-                            "apt": {
-                                "git": [],
-                                "jq": []
-                            }
-                        },
                         "sources": {
                             "/etc/consul.d" : { "Fn::Join" : ["",
                                 ["https://s3.amazonaws.com/", { "Ref" : "ConsulQSS3BucketName" }, "/", { "Ref" : "ConsulQSS3KeyPrefix"}, "ClientConfig.tar.gz"]] }
@@ -926,6 +920,9 @@
                                 "pip install --upgrade pip &> /dev/null\n",
                                 "pip install awscli --ignore-installed six &> /dev/null\n",
                                 "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                                "# aws-ec2-ssh package dependencies\n",
+                                "[ `which apt-get` ] && apt-get -y install git jq\n",
+                                "[ `which yum` ] && yum -y install git jq\n",
                                 "EIP_LIST=\"",
                                 {
                                     "Ref": "EIP1"
