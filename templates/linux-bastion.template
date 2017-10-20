@@ -804,10 +804,20 @@
                 "AWS::CloudFormation::Init": {
                     "config": {
                         "sources": {
-                            "/etc/consul.d" : { "Fn::Join" : ["",
-                                ["https://s3.amazonaws.com/", { "Ref" : "ConsulQSS3BucketName" }, "/", { "Ref" : "ConsulQSS3KeyPrefix"}, "ClientConfig.tar.gz"]] }
+                            "/etc/consul.d" : {
+                                "Fn::Sub" : "https://${ConsulQSS3BucketName}.s3.amazonaws.com/${ConsulQSS3KeyPrefix}ClientConfig.tar.gz"
+                            }
                         },
                         "files": {
+                            "/tmp/consul_client_bootstrap.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${ConsulQSS3BucketName}.s3.amazonaws.com/${ConsulQSS3KeyPrefix}scripts/consul_client_bootstrap.sh"
+                                },
+                                "mode": "000750",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
                             "/opt/aws-ec2-ssh/install.sh": {
                                 "source": "https://raw.githubusercontent.com/onespot/aws-ec2-ssh/onespot-master/install.sh",
                                 "mode": "000550",
@@ -973,18 +983,7 @@
                                 },
                                 "\n",
                                 "## Prepare Consul for the instance\n",
-                                "CONSUL_BOOTSTRAP_FILE=consul_client_bootstrap.sh\n",
-                                "CONSUL_BOOTSTRAP=",
-                                {
-                                    "Fn::Sub": "https://${ConsulQSS3BucketName}.s3.amazonaws.com/${ConsulQSS3KeyPrefix}scripts/"
-                                },
-                                "${CONSUL_BOOTSTRAP_FILE}",
-                                "\n",
-                                "echo ${CONSUL_BOOTSTRAP}",
-                                "\n",
-                                "wget ${CONSUL_BOOTSTRAP}",
-                                "\n",
-                                "chmod +x ${CONSUL_BOOTSTRAP_FILE}\n",
+                                "CONSUL_BOOTSTRAP_FILE=/tmp/consul_client_bootstrap.sh\n",
                                 "./${CONSUL_BOOTSTRAP_FILE} ",
                                 " --consul_tag_key ",
                                 {
