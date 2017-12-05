@@ -802,7 +802,15 @@
                     }
                 },
                 "AWS::CloudFormation::Init": {
-                    "config": {
+                    "configSets": {
+                        "full_install" : [
+                            "install_ssh_login",
+                            "install_inspector",
+                            "install_consul",
+                            "install_bastion"
+                        ]
+                    },
+                    "install_consul": {
                         "sources": {
                             "/etc/consul.d" : {
                                 "Fn::Sub" : "https://${ConsulQSS3BucketName}.s3.amazonaws.com/${ConsulQSS3KeyPrefix}ClientConfig.tar.gz"
@@ -817,13 +825,77 @@
                                 "owner": "root",
                                 "group": "root",
                                 "authentication": "S3AccessCreds"
-                            },
+                            }
+                        },
+                        "commands": {
+                            "01-install-consul": {
+                                "command": {
+                                    "Fn::Join": [" ", [
+                                        "/tmp/consul_client_bootstrap.sh",
+                                        "--consul_tag_key",
+                                        {
+                                            "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagKey"}
+                                        },
+                                        "--consul_tag_value",
+                                        {
+                                            "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagValue"}
+                                        },
+                                        "--s3bucket",
+                                        {
+                                            "Ref": "ConsulQSS3BucketName"
+                                        },
+                                        " --s3prefix",
+                                        {
+                                            "Ref": "ConsulQSS3KeyPrefix"
+                                        }
+                                    ]]
+                                }
+                            }
+                        }
+                    },
+                    "install_inspector": {
+                        "files": {
+                            "/tmp/install_inspector": {
+                                "source": "https://d1wk0tztpsntt1.cloudfront.net/linux/latest/install",
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "commands": {
+                            "01-install-inspector": {
+                                "command": "/tmp/install_inspector"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "awsagent": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        }
+                    },
+                    "install_ssh_login": {
+                        "files": {
                             "/opt/aws-ec2-ssh/install.sh": {
                                 "source": "https://raw.githubusercontent.com/onespot/aws-ec2-ssh/onespot-master/install.sh",
                                 "mode": "000550",
                                 "owner": "root",
                                 "group": "root"
-                            },
+                            }
+                        },
+                        "commands": {
+                            "01-install-ssh-login": {
+                                "command": {
+                                    "Fn::Sub": "./install.sh -a \"${AssumeRole}\" -i \"${AuthorizedIamGroups}\" -s \"${AuthorizedSudoerGroups}\""
+                                },
+                                "cwd": "/opt/aws-ec2-ssh"
+                            }
+                        }
+                    },
+                    "install_bastion": {
+                        "files": {
                             "/tmp/bastion_bootstrap.sh": {
                                 "source": {
                                     "Fn::Sub": [
@@ -846,13 +918,7 @@
                             }
                         },
                         "commands": {
-                            "a-install": {
-                                "command": {
-                                    "Fn::Sub": "./install.sh -a \"${AssumeRole}\" -i \"${AuthorizedIamGroups}\" -s \"${AuthorizedSudoerGroups}\""
-                                },
-                                "cwd": "/opt/aws-ec2-ssh"
-                            },
-                            "b-bootstrap": {
+                            "01-install-bootstrap": {
                                 "command": {
                                     "Fn::Join": [
                                         "",
@@ -981,28 +1047,7 @@
                                 {
                                     "Ref": "AWS::Region"
                                 },
-                                "\n",
-                                "## Prepare Consul for the instance\n",
-                                "CONSUL_BOOTSTRAP_FILE=/tmp/consul_client_bootstrap.sh\n",
-                                "./${CONSUL_BOOTSTRAP_FILE} ",
-                                " --consul_tag_key ",
-                                {
-                                    "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagKey"}
-                                },
-                                " --consul_tag_value ",
-                                {
-                                    "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagValue"}
-                                },
-                                " --s3bucket ",
-                                {
-                                    "Ref": "ConsulQSS3BucketName"
-                                },
-                                " --s3prefix ",
-                                {
-                                    "Ref": "ConsulQSS3KeyPrefix"
-                                },
-                                "\n",
-                                "## Finished preparing consul.\n",
+                                " --configsets full_install",
                                 "\n",
                                 "cfn-signal -e $? --stack ",
                                 {
