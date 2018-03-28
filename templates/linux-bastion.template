@@ -116,13 +116,14 @@
             "Type": "String"
         },
         "ConsulVersion": {
-            "Default": "0.8.1",
             "Description": "Version of Consul to deploy",
-            "Type": "String"
+            "Type": "String",
+            "Default": ""
         },
         "ConsulServerStack": {
             "Description": "The ARN ID for the Cloudformation stack that created the consul servers",
-            "Type": "String"
+            "Type": "String",
+            "Default": ""
         },
         "ConsulQSS3BucketName": {
             "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
@@ -379,6 +380,19 @@
         }
     },
     "Conditions": {
+        "InstallConsul": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "ConsulServerStack"
+                        },
+                        ""
+                    ]
+                }
+            ]
+
+        },
         "UseCrossAccountIAM": {
             "Fn::Not": [
                 {
@@ -493,6 +507,7 @@
         },
         "ConsulPolicy": {
             "Type": "AWS::IAM::Policy",
+            "Condition": "InstallConsul",
             "Properties": {
                 "PolicyName": "consul-bucket-access",
                 "PolicyDocument": {
@@ -796,7 +811,7 @@
                                 "Ref": "QSS3BucketName"
                             },
                             {
-                                "Ref": "ConsulQSS3BucketName"
+                                "Fn::If": [ "InstallConsul", { "Ref": "ConsulQSS3BucketName" }, { "Ref" : "AWS::NoValue" } ]
                             }
                         ]
                     }
@@ -806,7 +821,9 @@
                         "full_install" : [
                             "install_ssh_login",
                             "install_inspector",
-                            "install_consul",
+                            {
+                                "Fn::If": [ "InstallConsul", "install_consul", { "Ref" : "AWS::NoValue" } ]
+                            },
                             "install_bastion"
                         ]
                     },
@@ -834,11 +851,27 @@
                                         "/tmp/consul_client_bootstrap.sh",
                                         "--consul_tag_key",
                                         {
-                                            "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagKey"}
+                                            "Fn::If" : [
+                                                "InstallConsul",
+                                                {
+                                                    "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagKey"}
+                                                },
+                                                {
+                                                    "Ref" : "AWS::NoValue"
+                                                }
+                                            ]
                                         },
                                         "--consul_tag_value",
                                         {
-                                            "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagValue"}
+                                            "Fn::If" : [
+                                                "InstallConsul",
+                                                {
+                                                    "Fn::ImportValue" : {"Fn::Sub" : "${ConsulServerStack}-ConsulEc2RetryTagValue"}
+                                                },
+                                                {
+                                                    "Ref" : "AWS::NoValue"
+                                                }
+                                            ]
                                         },
                                         "--s3bucket",
                                         {
